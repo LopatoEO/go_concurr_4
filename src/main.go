@@ -44,11 +44,13 @@ func MakeWorkerPool(ctx context.Context, resLen int, concurrency int) WorkerPool
 
 func (wp *WorkerPool) Run(ids []int, fetcher Fetcher) ([]User, error) {
 	res := make([]User, 0, len(ids))
+
 	go func() {
 		in := make(chan struct{})
 		close(in)
 		for _, id := range ids {
 			out := make(chan struct{})
+
 			select {
 			case <-wp.ctx.Done():
 				return
@@ -58,22 +60,28 @@ func (wp *WorkerPool) Run(ids []int, fetcher Fetcher) ([]User, error) {
 			}
 		}
 	}()
+
 	for resIdx := 0; resIdx < len(ids); resIdx++ {
 		select {
 		case <-wp.ctx.Done():
 			wp.lock.Lock()
 			defer wp.lock.Unlock()
+
 			fmt.Println("error: ", wp.err)
 			return nil, wp.err
+
 		case user := <-wp.res:
 			fmt.Println("user: ", user)
 			res = append(res, user)
+
 		}
 	}
 	return res, nil
 }
 
 func (wp *WorkerPool) worker(id int, fetcher Fetcher, chin chan struct{}, chout chan struct{}) {
+	defer close(chout)
+
 	select {
 	case <-wp.ctx.Done():
 		<-wp.sem
@@ -82,6 +90,7 @@ func (wp *WorkerPool) worker(id int, fetcher Fetcher, chin chan struct{}, chout 
 	}
 
 	user, err := fetcher(wp.ctx, id)
+
 	if err != nil {
 		wp.lock.Lock()
 		wp.err = err
@@ -102,8 +111,6 @@ func (wp *WorkerPool) worker(id int, fetcher Fetcher, chin chan struct{}, chout 
 	case <-wp.ctx.Done():
 		return
 	}
-
-	close(chout)
 }
 
 func FetchUsers(
